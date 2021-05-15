@@ -6,7 +6,7 @@ services:
     container_name: jackett
     restart: always
     networks:
-      - sonarnet
+      - plexnet
     environment:
       - PGID=1026
       - PUID=100
