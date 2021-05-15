@@ -76,7 +76,7 @@ services:
       - /mnt/td_kodi/Series:/tv
 
   plex:
-    image: timhaak/plex
+    image: ghcr.io/linuxserver/plex
     container_name: plex
     restart: always
     ports:
@@ -95,12 +95,12 @@ services:
     depends_on:
       - "rclone_mount"
     environment:
-      - PGID=1026
-      - PUID=100
-      - TZ=Europe/Madrid
+      - PUID=1026
+      - PGID=100
+      - VERSION=docker
     volumes:
       - ${CONFIG_PATH}/plex:/config
-      - /mnt/td_kodi:/data
+      - /mnt/td_kodi:/media
 
 networks:
   plexnet:
