@@ -73,7 +73,7 @@ services:
     volumes:
       - ${CONFIG_PATH}/transmission:/config
       - ${MOUNT_DOWNLOADS_PATH}/Transmission:/downloads
-      - ${MOUNT_DOWNLOADS_PATH}/Transmission/torrent_input:/watch
+      - ${MOUNT_DOWNLOADS_PATH}/torrent_trigger:/watch
     ports:
       - 9091:9091
       - 51413:51413
