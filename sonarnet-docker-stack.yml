@@ -1,26 +1,46 @@
-version: "2"
+version: "3"
 services:
 
-  jackett:
-    image: linuxserver/jackett
-    container_name: jackett
-    restart: always
-    networks:
-      - plexnet
+  rclone_mount_downloads:
+    container_name: rclone_mount_downloads
+    image: mumiehub/rclone-mount
+    restart: unless-stopped
+    cap_add:
+    - SYS_ADMIN
+    devices:
+    - "/dev/fuse"
+    security_opt:
+    - apparmor:unconfined
     environment:
-      - PGID=1026
-      - PUID=100
-      - TZ=Europe/Madrid
+        RemotePath: "downloads:"
+        MountPoint: "/td"
+        MountCommands: "--allow-other --allow-non-empty --vfs-cache-mode writes --log-level INFO --log-file=/config/downloads.log"
     volumes:
-      - ${CONFIG_PATH}/jackett:/config
-      - ${JACKETT_DOWNLOAD_PATH}:/downloads
-    ports:
-      - "9118:9118"
-      
-  rclone_mount:
+      - ${MOUNT_DOWNLOADS_PATH}:/td:shared
+      - ${CONFIG_PATH}/rclone:/config
+
+  rclone_mount_musica:
+    container_name: rclone_mount_musica
+    image: mumiehub/rclone-mount
+    restart: unless-stopped
+    cap_add:
+    - SYS_ADMIN
+    devices:
+    - "/dev/fuse"
+    security_opt:
+    - apparmor:unconfined
+    environment:
+        RemotePath: "musica:"
+        MountPoint: "/td"
+        MountCommands: "--allow-other --allow-non-empty --log-level INFO --log-file=/config/musica.log"
+    volumes:
+      - ${MOUNT_MUSIC_PATH}:/td:shared
+      - ${CONFIG_PATH}/rclone:/config
+
+  rclone_mount_kodi:
     container_name: rclone_mount_kodi
     image: mumiehub/rclone-mount
-    restart: always
+    restart: unless-stopped
     cap_add:
     - SYS_ADMIN
     devices:
@@ -32,75 +52,110 @@ services:
     environment:
         RemotePath: "kodi:"
         MountPoint: "/td"
-        MountCommands: "--allow-other --allow-non-empty"
+        MountCommands: "--allow-other --allow-non-empty --log-level INFO --log-file=/config/kodi.log"
     volumes:
-      - /mnt/td_kodi:/td:shared
+      - ${MOUNT_MEDIA_PATH}:/td:shared
       - ${CONFIG_PATH}/rclone:/config
+
+  transmission:
+    image: ghcr.io/linuxserver/transmission
+    container_name: transmission
+    depends_on:
+      - "rclone_mount_downloads"
+    environment:
+      - PUID=${USER_ID}
+      - PGID=${USER_GROUP_ID}
+      - TZ=${TIME_ZONE}
+      - USER=${USER_TRANSMISSION}
+      - PASS=${PW_TRANSMISSION}
+    networks:
+      - plexnet      
+    volumes:
+      - ${CONFIG_PATH}/transmission:/config
+      - ${MOUNT_DOWNLOADS_PATH}/Transmission:/downloads
+      - ${MOUNT_DOWNLOADS_PATH}/Transmission/torrent_input:/watch
+    ports:
+      - 9091:9091
+      - 51413:51413
+      - 51413:51413/udp
+    restart: unless-stopped      
+
+  jackett:
+    image: linuxserver/jackett
+    container_name: jackett
+    restart: unless-stopped
+    depends_on:
+      - "transmission"
+    networks:
+      - plexnet
+    environment:
+      - PUID=${USER_ID}
+      - PGID=${USER_GROUP_ID}
+      - TZ=${TIME_ZONE}
+    volumes:
+      - ${CONFIG_PATH}/jackett:/config
+      - ${MOUNT_DOWNLOADS_PATH}/Jackett:/downloads
+    ports:
+      - "9117:9117"
 
   radarr:
     image: linuxserver/radarr
     container_name: radarr
-    restart: always
+    restart: unless-stopped
     depends_on:
-      - "rclone_mount"
+      - "rclone_mount_kodi"
+      - "transmission"
+      - "jackett"
     ports:
-      - "7878:7878"
+      - "8310:8310"
     networks:
       - plexnet
     environment:
-      - PGID=1026
-      - PUID=100
-      - TZ=Europe/Madrid
+      - PUID=${USER_ID}
+      - PGID=${USER_GROUP_ID}
+      - TZ=${TIME_ZONE}
     volumes:
       - ${CONFIG_PATH}/radarr:/config
-      - ${RADARR_DOWNLOAD_PATH}:/downloads
-      - /mnt/td_kodi/Pelis:/movies
+      - ${MOUNT_DOWNLOADS_PATH}/Transmission:/downloads
+      - ${MOUNT_MEDIA_PATH}:/media
 
   sonarr:
     image: linuxserver/sonarr
     container_name: sonarr
-    restart: always
+    restart: unless-stopped
     ports:
       - "8989:8989"
     depends_on:
-      - "rclone_mount"
+      - "rclone_mount_kodi"
+      - "transmission"
+      - "jackett"
     networks:
       - plexnet
     environment:
-      - PGID=1026
-      - PUID=100
-      - TZ=Europe/Madrid
+      - PUID=${USER_ID}
+      - PGID=${USER_GROUP_ID}
+      - TZ=${TIME_ZONE}
     volumes:
       - ${CONFIG_PATH}/sonarr:/config
-      - ${SONARR_DOWNLOAD_PATH}:/downloads
-      - /mnt/td_kodi/Series:/tv
+      - ${MOUNT_DOWNLOADS_PATH}/Transmission:/downloads
+      - ${MOUNT_MEDIA_PATH}:/media
 
   plex:
     image: ghcr.io/linuxserver/plex
     container_name: plex
-    restart: always
-    ports:
-      - "32400:32400"
-      - "1900:1900"
-      - "3005:3005"
-      - "5353:5353"
-      - "8324:8324"
-      - "32410:32410"
-      - "32412:32412"
-      - "32413:32413"
-      - "32414:32414"
-      - "32469:32469"
-    networks:
-      - plexnet
+    restart: unless-stopped
+    network_mode: "host"
     depends_on:
-      - "rclone_mount"
+      - "rclone_mount_kodi"
+      - "rclone_mount_musica"
     environment:
-      - PUID=1026
-      - PGID=100
+      - PUID=${USER_ID}
+      - PGID=${USER_GROUP_ID}
       - VERSION=docker
     volumes:
       - ${CONFIG_PATH}/plex:/config
-      - /mnt/td_kodi:/media
+      - ${MOUNT_MEDIA_PATH}:/media
+      - ${MOUNT_MUSIC_PATH}:/music
 
 networks:
   plexnet:
